@@ -1,0 +1,11 @@
+q1: การตั้งค่า Cloud Provider (Groq) & API Key: ในแผนตกลงใช้ Groq สำหรับ Thai STT (whisper-large-v3-turbo) และ LLM Fallback (llama-3.3-70b-versatile) เจ้านายมี GROQ_API_KEY ใส่ไว้ใน environment ระบบแล้ว หรือต้องการให้สร้างไฟล์คอนฟิกเก็บไว้ที่ ~/.config/javis/env ครับ?
+- ผมต้องการ ฟรี 100% ผมเคยเห็นคนทำโปรเจค ลองเอาไปดู https://github.com/skyliner2008/PersonalAIBot-ESP32
+
+q2: เสียงสังเคราะห์และบุคลิกเริ่มต้นของ Javis (edge-tts): เจ้านายต้องการเสียงเริ่มต้นเป็นเสียงผู้ชาย (th-TH-NiwatNeural) หรือเสียงผู้หญิง (th-TH-PremwadeeNeural) และต้องการโทนภาษาแบบกระชับทางการ หรือสุภาพเป็นกันเองครับ?
+- เอาสาวๆมาเลย 
+
+q3: ปุ่มคีย์ลัด Push-to-Talk (PTT): ในสเปกกำหนดไว้เป็น Ctrl+Alt+J เพื่อผูกกับ Cinnamon Native Shortcuts เจ้านายสะดวกปุ่มนี้ หรือมีปุ่มลัดอื่นที่ถนัดมือกว่านี้ไหมครับ?
+- ship+supper
+
+q4: การอนุมัติเริ่มงาน Milestone M0: หากเจ้านายเห็นชอบกับสถาปัตยกรรมและข้อตกลงทั้งหมดแล้ว เจ้านายอนุมัติให้เริ่มสร้างโครงสร้างโค้ด M0 (pyproject.toml, Thread-Isolated Audio Engine และสคริปต์ javis doctor) เลยหรือไม่ครับ?
+- อนุมัติ
