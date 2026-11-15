@@ -136,6 +136,16 @@ class FastPathRouter:
             except Exception as e:
                 return FastPathResult(matched=True, action="life_briefing", error=str(e), speech_response="ไม่สามารถดึงข้อมูลสรุปได้ครับ")
 
+        # Life Manager Timetable ("ตารางเรียนวันนี้", "วันนี้เรียนอะไรบ้าง", "มีเรียนอะไรบ้าง")
+        if re.search(r"^(ตารางเรียน(\s*วันนี้)?|(วันนี้)?มีเรียน(อะไร(บ้าง)?)?|วันนี้เรียนอะไรบ้าง)$", clean):
+            try:
+                from javis.integrations.life_manager import LifeManagerClient
+                client = LifeManagerClient()
+                timetable_text = client.get_today_timetable()
+                return FastPathResult(matched=True, action="life_timetable", speech_response=timetable_text)
+            except Exception as e:
+                return FastPathResult(matched=True, action="life_timetable", error=str(e), speech_response="ไม่สามารถดึงตารางเรียนได้ครับ")
+
         # Rule 8: Open Websites / Known Services ("เปิดยูทูป", "เปิดกูเกิล", "เปิด github", etc.)
         web_match = re.match(r"^เปิด\s*(เว็บ\s*)?(ยูทูป|youtube|กูเกิล|google|github|กิตฮับ|facebook|เฟสบุ๊ค)$", clean, re.IGNORECASE)
         if web_match:

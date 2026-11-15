@@ -2,6 +2,7 @@
 Connects Javis OS directly to the Google Apps Script Web App API and local CLI/MCP tools.
 """
 
+import datetime
 import json
 import logging
 import os
@@ -18,6 +19,7 @@ LIFE_MANAGER_WEB_APP_URL = (
 )
 GDRIVE_PROJECT_DIR = "/home/apichet/GoogleDrive/Gemini/life_manager"
 LOCAL_EXPERIMENT_DIR = "/home/apichet/for-hermes/02_experiments/life_manager"
+LOCAL_STUDY_MANAGER_DIR = "/home/apichet/study-manager"
 
 
 class LifeManagerClient:
@@ -121,3 +123,24 @@ class LifeManagerClient:
                 pass
 
         return f"ขณะนี้มีภารกิจค้างทำ {pending_tasks} งาน และการบ้านรอส่ง {pending_assignments} งานค่ะ"
+
+    def get_today_timetable(self) -> str:
+        """Fetch today's school timetable from local study manager or Drive."""
+        days_en = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+        now = datetime.datetime.now()
+        day_en = days_en[now.weekday()]
+
+        timetable_file = os.path.join(LOCAL_STUDY_MANAGER_DIR, "data", "timetable.json")
+        if os.path.exists(timetable_file):
+            try:
+                with open(timetable_file, "r", encoding="utf-8") as f:
+                    schedule = json.load(f)
+                today_periods = [s for s in schedule if s.get("day") == day_en]
+                if today_periods:
+                    items = [f"คาบที่ {p.get('period')} {p.get('subject')} ห้อง {p.get('room')}" for p in today_periods]
+                    return f"ตารางเรียนวันนี้มีดังนี้ครับ: {', '.join(items)} ครับ"
+                else:
+                    return "วันนี้ไม่มีตารางเรียนครับ พักผ่อนได้เต็มที่ครับ"
+            except Exception as e:
+                logger.warning("Error reading timetable: %s", e)
+        return "ไม่สามารถดึงตารางเรียนได้ในขณะนี้ครับ"

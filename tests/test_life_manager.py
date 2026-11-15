@@ -40,6 +40,21 @@ def test_life_manager_briefing_route():
         assert res2.speech_response == mock_briefing
 
 
+def test_life_manager_timetable_route():
+    router = FastPathRouter()
+    mock_timetable = "ตารางเรียนวันนี้มีดังนี้ครับ: คาบที่ 1 ภาษาไทย ห้อง 1-301 ครับ"
+
+    with patch("javis.integrations.life_manager.LifeManagerClient.get_today_timetable", return_value=mock_timetable):
+        res = router.route("ตารางเรียนวันนี้")
+        assert res.matched is True
+        assert res.action == "life_timetable"
+        assert res.speech_response == mock_timetable
+
+        res2 = router.route("วันนี้เรียนอะไรบ้าง")
+        assert res2.matched is True
+        assert res2.action == "life_timetable"
+
+
 def test_life_manager_client_api():
     client = LifeManagerClient()
     # Test real API call directly (with quick timeout)
