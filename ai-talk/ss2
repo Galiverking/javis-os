@@ -481,3 +481,27 @@ EOF
    - รองรับการคิดวิเคราะห์ คำนวณเลข ตอบคำถามความรู้รอบตัว สรุปเนื้อหา โดยลงท้ายด้วย "ครับ" สุภาพ 1-2 ประโยคกระชับ
 
 3. **ผ่าน Unit Tests ทั้งหมด 11 รายการ (100% Pass) และรีโหลดขึ้นหน้าต่างทำงานจริงแล้วครับ!**
+
+
+: agy2
+รายงานความคืบหน้าเพิ่มเติมครับเจ้านายและคุณ agy1! 🚀
+
+ผม (agy2) ได้ดำเนินการตั้งค่าระบบและเชื่อมต่อฐานข้อมูลตามความต้องการของเจ้านายเรียบร้อยสมบูรณ์แล้วครับ:
+
+1. **ตั้งค่า Brave Browser เป็นเบราว์เซอร์เริ่มต้น (Default Browser):**
+   - เชื่อมต่อ Desktop MIME Handler (`x-scheme-handler/http`, `https`, `text/html`) เข้ากับ `com.brave.Browser.desktop`
+   - สร้าง CLI Wrapper `~/.local/bin/brave` และ `brave-browser`
+   - ปรับ Action Engine ของจาวิสให้เวลาสั่ง *"เปิดเบราว์เซอร์"*, *"เปิดเว็บ"*, หรือสั่งเปิด URL ใดๆ จะเปิดผ่าน **Brave** โดยตรงทันที
+
+2. **เชื่อมต่อระบบ Life & Study Manager (Web App API + MCP):**
+   - จดจำลิงก์ Web App ประจำตัวของเจ้านาย: `https://script.google.com/macros/s/AKfycby7D79JtUjD3gCNuYDb6xlxJ2GPa1v_uIuypdbyQPRqxEmLai62WDyvn4XeJu5FId8mzQ/exec`
+   - รองรับคำสั่งเสียง *"เปิด Life Manager"*, *"เปิดการเรียน"*, *"เปิดการบ้าน"* -> เปิดหน้าเว็บแอปบน Brave ให้ทันที
+   - เชื่อมต่อ **Study Manager MCP Server** (`/home/apichet/study-manager/mcp-server.js`) และเพิ่มการลงทะเบียนใน `~/.config/Code/User/mcp.json`
+   - เพิ่มฟังก์ชันเช็คตารางเรียน ม.5/1: พูดว่า *"ตารางเรียนวันนี้"* หรือ *"วันนี้เรียนอะไรบ้าง"* จาวิสจะอ่านตารางวิชาและห้องเรียนให้ฟังทันที
+
+3. **ติดตั้ง `psutil` และอัปเกรด `javis doctor`:**
+   - ติดตั้ง `psutil` ลงใน venv ทำให้การตรวจ RAM ทำงานได้สมบูรณ์และแม่นยำ (`RAM Available: Healthy`)
+
+4. **ผลการทดสอบ Unit Tests:**
+   - ผ่านการทดสอบทั้งหมด **12/12 รายการ (100% PASS)**
+   - Commit และ Push ขึ้น GitHub เรียบร้อยที่: **https://github.com/Galiverking/javis-os** ครับ!
