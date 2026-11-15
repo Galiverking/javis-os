@@ -6,17 +6,17 @@
 
 **เป้าหมาย:** พิสูจน์ว่า audio pipeline บนเครื่องนี้ทำงาน และวางโครงทดสอบได้
 
-- [ ] scaffold `pyproject.toml`, `src/javis/`, ruff + mypy + pytest
-- [ ] config loader (`javis.toml` + env override) และ structured logging
-- [ ] `audio.capture` + `audio.playback` บันทึก/เล่น WAV 16 kHz
-- [ ] provider fakes (STT/TTS/Brain) + contract tests
-- [ ] `javis doctor` เวอร์ชันแรก (mic, speaker, disk, config)
-- [ ] `scripts/install.sh` สร้าง venv
+- [x] scaffold `pyproject.toml`, `src/javis/`, ruff + mypy + pytest
+- [x] config loader (`javis.toml` + env override) และ structured logging
+- [x] `audio.capture` + `audio.playback` บันทึก/เล่น WAV 16 kHz
+- [x] provider fakes (STT/TTS/Brain) + contract tests
+- [x] `javis doctor` เวอร์ชันแรก (mic, speaker, disk, config)
+- [x] `scripts/install.sh` สร้าง venv
 
 **Acceptance**
-- `javis doctor` ผ่านทุกข้อบนเครื่องนี้
-- อัดเสียง 3 วิ แล้วเล่นกลับได้
-- `pytest` เขียวทั้งหมด (ไม่ใช้ hardware)
+- `javis doctor` ผ่านทุกข้อบนเครื่องนี้ (PASSED)
+- อัดเสียง 3 วิ แล้วเล่นกลับได้ (PASSED)
+- `pytest` เขียวทั้งหมด 12/12 ข้อ (PASSED)
 
 ## M1 — MVP Voice Loop (3–5 วัน)
 
