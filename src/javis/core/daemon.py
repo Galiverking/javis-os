@@ -4,13 +4,15 @@ Orchestrates:
 2. Audio Capture + Half-Duplex Isolation
 3. Audio UX Chimes & Desktop Notifications
 4. Groq Whisper Cloud STT (Thai)
-5. Fast-Path Local Command Router
-6. Gemini 2.5 Flash Free-Tier LLM (Executive Secretary Persona)
+5. Fast-Path Local Command Router (Tier 1 — Regex)
+5.5. Tier 1.5 Guardrail + Intent Router (Opt-in via JEV_API_KEY)
+6. Hermes Gateway + Gemini 2.5 Flash Free-Tier LLM (Tier 2)
 7. Edge-TTS (th-TH-PremwadeeNeural) Speech Playback
 """
 
 import asyncio
 import io
+import logging
 import os
 import sys
 import wave
@@ -18,12 +20,15 @@ from enum import Enum
 from pathlib import Path
 from typing import List, Optional
 
+logger = logging.getLogger(__name__)
+
 from javis.audio.capture import AudioCaptureWorker
 from javis.audio.chime import play_error_chime, play_start_chime, play_stop_chime
 from javis.audio.half_duplex import HalfDuplexManager
 from javis.audio.playback import AudioPlaybackEngine
 from javis.config import load_config
 from javis.core.router import FastPathRouter
+from javis.guardrail.tier15 import Tier15Guardrail
 from javis.providers.free_stack import FreeTierLLMClient, FreeTierSTTClient
 from javis.tts.edge import EdgeTTSClient
 from javis.ui.notify import send_notification
@@ -73,6 +78,8 @@ class VoicePipelineOrchestrator:
         self.llm = FreeTierLLMClient(api_key=self.config.gemini_api_key)
         self.tts = EdgeTTSClient(voice=self.config.voice)
         self.router = FastPathRouter()
+        # Tier 1.5: Opt-in Guardrail + Intent Router (zero RAM overhead)
+        self.guardrail = Tier15Guardrail()
 
         self._audio_buffer: List[bytes] = []
         self._lock = asyncio.Lock()
@@ -169,19 +176,37 @@ class VoicePipelineOrchestrator:
             print(f"🗣️ [User]: \"{user_text}\"")
             send_notification("🗣️ คุณพูด:", user_text, timeout_ms=4000)
 
-            # 2. Intent Routing (Fast-Path vs Gemini Brain)
+            # 2. Intent Routing: Tier 1 (Regex) → Tier 1.5 (Guardrail) → Tier 2 (Hermes/Gemini)
             reply_text = ""
             route_res = self.router.route(user_text)
-            
+
             if route_res and route_res.matched:
-                print(f"⚡ [Fast-Path Match]: {route_res.action}")
+                # ─── Tier 1 Fast-Path matched ───────────────────────────────
+                print(f"⚡ [Tier 1 Fast-Path]: {route_res.action}")
                 reply_text = route_res.speech_response or "ดำเนินการเรียบร้อยครับ"
             else:
-                print("🧠 [Gemini 2.5 Flash]: Generating answer...")
-                reply_text = await self.llm.generate_response(
-                    prompt=user_text,
-                    system_prompt=get_dynamic_executive_prompt(),
+                # ─── Tier 1.5 Guardrail check ───────────────────────────────
+                decision = await loop.run_in_executor(None, self.guardrail.evaluate, user_text)
+                mode_tag = "heuristic" if decision.heuristic_only else "LLM-verified"
+                print(
+                    f"🛡️  [Tier 1.5 Guardrail | {mode_tag}] intent={decision.intent} "
+                    f"allowed={decision.allowed} latency={decision.latency_ms:.0f}ms"
                 )
+
+                if not decision.allowed:
+                    # Blocked by guardrail — refuse, do NOT call Tier 2
+                    logger.warning("[Daemon] Guardrail BLOCKED: %s", decision.block_reason)
+                    reply_text = (
+                        "ขออภัยครับ คำสั่งนี้ถูกระบบรักษาความปลอดภัยบล็อกไว้ "
+                        "เพราะดูเหมือนอาจเป็นอันตรายต่อระบบ"
+                    )
+                else:
+                    # ─── Tier 2: Gemini Flash free-tier ────────────────────
+                    print("🧠 [Tier 2 Gemini 2.5 Flash]: Generating answer...")
+                    reply_text = await self.llm.generate_response(
+                        prompt=user_text,
+                        system_prompt=get_dynamic_executive_prompt(),
+                    )
 
             reply_text = reply_text.strip()
             print(f"🤖 [Javis]: \"{reply_text}\"")
