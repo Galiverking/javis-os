@@ -108,7 +108,8 @@ class TestLatencyBudget:
 # ---------------------------------------------------------------------------
 
 class TestOptInMode:
-    def test_heuristic_only_when_no_key(self):
+    def test_heuristic_only_when_no_key(self, monkeypatch):
+        monkeypatch.delenv("JEV_API_KEY", raising=False)
         g = Tier15Guardrail(api_key=None)
         dec = g.evaluate("กี่โมงแล้ว")
         assert dec.heuristic_only is True
@@ -117,3 +118,35 @@ class TestOptInMode:
         # We can't actually call the API in unit tests, but confirm the flag
         g = Tier15Guardrail(api_key="fake_key_for_flag_test")
         assert g._heuristic_only is False
+
+    def test_typesafe_jev_systemone_mocked(self, monkeypatch):
+        from unittest.mock import MagicMock
+        g = Tier15Guardrail(api_key="apikey_mock_test_key_12345")
+        
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "model": "jev-latest",
+            "answers": {
+                "is_harmful": {"type": "noul", "noul": 0.05},
+                "intent": {"type": "choice", "choice": "query_time", "confidence": 0.99}
+            }
+        }
+        
+        class MockClient:
+            def __init__(self, *args, **kwargs):
+                pass
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                pass
+            def post(self, url, **kwargs):
+                assert "api.typesafe.ai" in url
+                return mock_response
+
+        import httpx
+        monkeypatch.setattr(httpx, "Client", MockClient)
+        
+        intent, conf = g._llm_verify_intent("ตอนนี้กี่โมงแล้วครับ", "unknown")
+        assert intent == "query_time"
+        assert conf == 0.99

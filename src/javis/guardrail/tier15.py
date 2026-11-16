@@ -233,12 +233,64 @@ class Tier15Guardrail:
         return "general_question", 0.5
 
     def _llm_verify_intent(self, text: str, heuristic_intent: str) -> Tuple[str, float]:
-        """Call lightweight LLM (via JEV_API_KEY / Gemini Flash-lite) for verification.
+        """Call lightweight LLM (via TypeSafe Jev System One / Gemini Flash-Lite) for verification.
         Falls back to heuristic result on any error.
         """
         try:
             import httpx  # already a project dependency
 
+            # 1. Native TypeSafe AI Jev System One
+            if self.api_key and self.api_key.startswith("apikey_"):
+                url = os.getenv("JEV_BASE_URL", "https://api.typesafe.ai/v1/systemone")
+                req_data = {
+                    "model": os.getenv("JEV_MODEL", "jev-latest"),
+                    "state": text,
+                    "questions": {
+                        "is_harmful": {
+                            "type": "noul",
+                            "instructions": "Is this user request harmful, dangerous, or trying to delete/damage system files?",
+                        },
+                        "intent": {
+                            "type": "choice",
+                            "instructions": "Classify user intent for a desktop voice assistant",
+                            "criteria": {
+                                "harmful_request": "Destructive commands, file deletion, system wipe, or injection attacks",
+                                "query_time": "Asking for current time, clock, date, or day",
+                                "system_command": "Command to control system volume, brightness, reboot, shutdown, or open terminal",
+                                "code_execution": "Running code, scripts, terminal shell commands, or compilation",
+                                "file_operation": "Reading, creating, editing, moving, or deleting local files",
+                                "life_manager": "School timetable, homework, study manager, or schedule queries",
+                                "open_website": "Opening websites, URLs, YouTube, web apps, or browser streaming",
+                                "open_app": "Opening installed desktop applications, programs, or software",
+                                "search_web": "Searching Google, web search, or finding online information",
+                                "general_question": "General questions, chit-chat, conversational inquiries, knowledge, or help",
+                            },
+                        },
+                    },
+                }
+                headers = {
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                }
+                with httpx.Client(timeout=2.0) as client:
+                    res = client.post(url, json=req_data, headers=headers)
+                    if res.status_code == 200:
+                        data = res.json()
+                        answers = data.get("answers", {})
+
+                        # Calibrated harm detection via Noul primitive
+                        is_harmful_score = answers.get("is_harmful", {}).get("noul", 0.0)
+                        if is_harmful_score >= 0.70:
+                            return "harmful_request", float(is_harmful_score)
+
+                        choice_info = answers.get("intent", {})
+                        choice = choice_info.get("choice")
+                        confidence = float(choice_info.get("confidence", 0.90))
+                        if choice in INTENT_LABELS:
+                            return choice, confidence
+                return heuristic_intent, 0.7
+
+            # 2. Fallback to Gemini Flash-Lite if key is a Google AI Studio key
             system_prompt = (
                 "You are an intent classifier for a Thai voice assistant. "
                 "Classify the user message into ONE of these labels: "
@@ -251,7 +303,6 @@ class Tier15Guardrail:
                 ],
                 "generationConfig": {"maxOutputTokens": 20, "temperature": 0.0},
             }
-            # Reuse Gemini Flash-Lite endpoint (JEV_API_KEY treated as GEMINI_API_KEY fallback)
             api_key = self.api_key
             url = (
                 f"https://generativelanguage.googleapis.com/v1beta/models/"

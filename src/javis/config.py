@@ -14,9 +14,10 @@ class JavisConfig(BaseModel):
     sample_rate: int = Field(default=16000, description="Capture sample rate in Hz")
     playback_rate: int = Field(default=24000, description="Playback sample rate in Hz")
     
-    # Providers (100% Free Stack)
+    # Providers (100% Free Stack + Optional Jev System One)
     groq_api_key: str = Field(default_factory=lambda: os.getenv("GROQ_API_KEY", ""))
     gemini_api_key: str = Field(default_factory=lambda: os.getenv("GEMINI_API_KEY", ""))
+    jev_api_key: str = Field(default_factory=lambda: os.getenv("JEV_API_KEY", ""))
     hermes_url: str = Field(default="http://127.0.0.1:8000")
     
     # IPC / Sockets
