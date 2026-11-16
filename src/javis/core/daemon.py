@@ -140,6 +140,41 @@ class VoicePipelineOrchestrator:
             wf.writeframes(pcm_bytes)
         return bio.getvalue()
 
+    async def process_text_query(self, user_text: str) -> str:
+        """Process incoming text query through Tier 1 -> Tier 1.5 -> Tier 2."""
+        loop = asyncio.get_running_loop()
+        user_text = user_text.strip()
+        route_res = self.router.route(user_text)
+
+        if route_res and route_res.matched:
+            # ─── Tier 1 Fast-Path matched ───────────────────────────────
+            print(f"⚡ [Tier 1 Fast-Path]: {route_res.action}")
+            return route_res.speech_response or "ดำเนินการเรียบร้อยครับ"
+
+        # ─── Tier 1.5 Guardrail check ───────────────────────────────
+        decision = await loop.run_in_executor(None, self.guardrail.evaluate, user_text)
+        mode_tag = "heuristic" if decision.heuristic_only else "LLM-verified"
+        print(
+            f"🛡️  [Tier 1.5 Guardrail | {mode_tag}] intent={decision.intent} "
+            f"allowed={decision.allowed} latency={decision.latency_ms:.0f}ms"
+        )
+
+        if not decision.allowed:
+            # Blocked by guardrail — refuse, do NOT call Tier 2
+            logger.warning("[Daemon] Guardrail BLOCKED: %s", decision.block_reason)
+            return (
+                "ขออภัยครับ คำสั่งนี้ถูกระบบรักษาความปลอดภัยบล็อกไว้ "
+                "เพราะดูเหมือนอาจเป็นอันตรายต่อระบบ"
+            )
+
+        # ─── Tier 2: Gemini Flash free-tier ────────────────────
+        print("🧠 [Tier 2 Gemini Flash]: Generating answer...")
+        reply = await self.llm.generate_response(
+            prompt=user_text,
+            system_prompt=get_dynamic_executive_prompt(),
+        )
+        return reply.strip()
+
     async def _execute_pipeline(self) -> None:
         """Process recorded audio through STT -> Brain -> TTS -> Playback."""
         loop = asyncio.get_running_loop()
@@ -176,39 +211,9 @@ class VoicePipelineOrchestrator:
             print(f"🗣️ [User]: \"{user_text}\"")
             send_notification("🗣️ คุณพูด:", user_text, timeout_ms=4000)
 
-            # 2. Intent Routing: Tier 1 (Regex) → Tier 1.5 (Guardrail) → Tier 2 (Hermes/Gemini)
-            reply_text = ""
-            route_res = self.router.route(user_text)
+            # Process intent through Tier 1 -> Tier 1.5 -> Tier 2
+            reply_text = await self.process_text_query(user_text)
 
-            if route_res and route_res.matched:
-                # ─── Tier 1 Fast-Path matched ───────────────────────────────
-                print(f"⚡ [Tier 1 Fast-Path]: {route_res.action}")
-                reply_text = route_res.speech_response or "ดำเนินการเรียบร้อยครับ"
-            else:
-                # ─── Tier 1.5 Guardrail check ───────────────────────────────
-                decision = await loop.run_in_executor(None, self.guardrail.evaluate, user_text)
-                mode_tag = "heuristic" if decision.heuristic_only else "LLM-verified"
-                print(
-                    f"🛡️  [Tier 1.5 Guardrail | {mode_tag}] intent={decision.intent} "
-                    f"allowed={decision.allowed} latency={decision.latency_ms:.0f}ms"
-                )
-
-                if not decision.allowed:
-                    # Blocked by guardrail — refuse, do NOT call Tier 2
-                    logger.warning("[Daemon] Guardrail BLOCKED: %s", decision.block_reason)
-                    reply_text = (
-                        "ขออภัยครับ คำสั่งนี้ถูกระบบรักษาความปลอดภัยบล็อกไว้ "
-                        "เพราะดูเหมือนอาจเป็นอันตรายต่อระบบ"
-                    )
-                else:
-                    # ─── Tier 2: Gemini Flash free-tier ────────────────────
-                    print("🧠 [Tier 2 Gemini 2.5 Flash]: Generating answer...")
-                    reply_text = await self.llm.generate_response(
-                        prompt=user_text,
-                        system_prompt=get_dynamic_executive_prompt(),
-                    )
-
-            reply_text = reply_text.strip()
             print(f"🤖 [Javis]: \"{reply_text}\"")
             send_notification("🤖 Javis ตอบ:", reply_text, timeout_ms=5000)
 
@@ -261,6 +266,12 @@ async def run_daemon() -> None:
             await writer.wait_closed()
 
     server = await asyncio.start_unix_server(_handle_client, path=str(SOCKET_PATH))
+    
+    # ─── iPhone Mobile Companion Bridge (Port 8765) ─────────────────────
+    from javis.ui.mobile_api import MobileCompanionServer
+    mobile_server = MobileCompanionServer(orchestrator=orchestrator, host="0.0.0.0", port=8765)
+    await mobile_server.start()
+
     print(f"\n" + "=" * 55)
     print(f"🎙️  Javis OS Voice Assistant (พร้อมรับคำสั่ง)")
     print(f"=" * 55)
@@ -268,6 +279,10 @@ async def run_daemon() -> None:
     if sys.stdin.isatty():
         print(f"• ปุ่มลัดในหน้าต่างนี้: กด [Enter] เพื่อเปิดไมค์พูด / กด [Enter] อีกครั้งเพื่อสั่งงาน!")
     print(f"• Socket: {SOCKET_PATH}")
+    print(f"\n📱 iPhone Companion (Safari / Shortcuts / Siri):")
+    print(f"   • Wi-Fi ในบ้าน: http://192.168.1.23:8765")
+    print(f"   • Tailscale:    http://100.89.142.114:8765")
+    print(f"   • Token ลับ:    {mobile_server.token}")
     print("=" * 55 + "\n")
     
     send_notification("🚀 Javis OS พร้อมทำงาน", "กด Shift+Super เพื่อเริ่มคุยได้เลยค่ะ")
@@ -291,6 +306,7 @@ async def run_daemon() -> None:
         async with server:
             await server.serve_forever()
     finally:
+        await mobile_server.stop()
         if stdin_task:
             stdin_task.cancel()
         if SOCKET_PATH.exists():

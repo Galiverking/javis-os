@@ -148,6 +148,44 @@ def test_voice(
 
 
 @app.command()
+def mobile(
+    port: int = typer.Option(8765, "--port", "-p", help="Port to listen on"),
+    host: str = typer.Option("0.0.0.0", "--host", "-h", help="Bind host"),
+):
+    """Starts the iPhone Mobile Companion server (Safari Web UI + Apple Shortcuts API)."""
+    from javis.core.daemon import VoicePipelineOrchestrator
+    from javis.ui.mobile_api import MobileCompanionServer, get_or_create_mobile_token
+
+    token = get_or_create_mobile_token()
+    typer.secho("\n📱 Javis OS Mobile Companion for iPhone", fg=typer.colors.CYAN, bold=True)
+    typer.echo("=" * 55)
+    typer.secho("• Wi-Fi Local (วงในบ้าน):", fg=typer.colors.YELLOW, bold=True)
+    typer.echo(f"  http://192.168.1.23:{port}")
+    typer.secho("• Tailscale VPN (ได้ทุกที่นอกบ้าน):", fg=typer.colors.YELLOW, bold=True)
+    typer.echo(f"  http://100.89.142.114:{port}")
+    typer.secho("• Mobile Secret Token:", fg=typer.colors.GREEN, bold=True)
+    typer.echo(f"  {token}")
+    typer.echo("=" * 55)
+    typer.echo("\nเปิด Safari บน iPhone 11 เข้า URL ด้านบนได้ทันทีครับ!")
+    typer.echo("กด Ctrl+C เพื่อหยุดการทำงาน\n")
+
+    async def _run():
+        orchestrator = VoicePipelineOrchestrator()
+        server = MobileCompanionServer(orchestrator=orchestrator, host=host, port=port, token=token)
+        await server.start()
+        try:
+            while True:
+                await asyncio.sleep(3600)
+        finally:
+            await server.stop()
+
+    try:
+        asyncio.run(_run())
+    except KeyboardInterrupt:
+        typer.secho("\nMobile server stopped.", fg=typer.colors.YELLOW)
+
+
+@app.command()
 def setup_hotkey():
     """Configures Linux Mint / Cinnamon shortcut (Shift+Super) to trigger Javis PTT."""
     typer.echo("Configuring Cinnamon custom shortcut for Shift+Super...")
