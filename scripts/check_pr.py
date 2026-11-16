@@ -24,7 +24,7 @@ def check():
                     f.write(pr_info)
                 title = f"Javis OS: ตรวจพบ {len(prs)} PR ใหม่!"
                 body = f"#{prs[0].get('number')}: {prs[0].get('title')}"
-                subprocess.run(["notify-send", "-u", "critical", title, body], check=False)
+                subprocess.Popen(["notify-send", "-u", "critical", title, body], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             else:
                 f.write(f"[{now_str}] Check completed: No open PRs.\n")
                 print(f"[{now_str}] Check completed: No open PRs.")

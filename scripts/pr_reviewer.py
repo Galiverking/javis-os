@@ -156,7 +156,7 @@ def process_single_pr(pr, timestamp_str):
 
     alert_title = f"Javis OS: ตรวจและวิเคราะห์ PR #{num} เสร็จสิ้น"
     alert_body = f"{title} ({status_word})"
-    subprocess.run(["notify-send", "-u", "normal", alert_title, alert_body], check=False)
+    subprocess.Popen(["notify-send", "-u", "normal", alert_title, alert_body], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     logger.info("PR #%d review finished! Saved to %s", num, report_file)
 
 
