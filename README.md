@@ -1,36 +1,59 @@
-# Javis OS
+# Javis OS (v0.3.1)
 
-ผู้ช่วยเสียงส่วนตัวภาษาไทย ที่รันอยู่บนเครื่องนี้ (Linux Mint 22.3 / X11 / PipeWire)
-ทำหน้าที่เป็น **Precision Voice & Desktop Interface Layer** สั่งงานระบบ สตรีมเสียงโต้ตอบ และส่งต่องานซับซ้อนให้ Hermes Gateway (port 8000)
+**Precision Voice & Desktop Interface Layer + iPhone 11 Companion (100% Free Stack)**  
+ออกแบบสำหรับ **Linux Mint 22.3 (X11 / PipeWire / Cinnamon)** ภายใต้งบประมาณหน่วยความจำ **`daemon RSS <= 180 MB`** เชื่อมต่อ **Hermes Gateway (port 8000)**, **Life & Study Manager**, และ **iPhone 11 (Tailscale + Shortcuts + Scriptable)**
 
-> สถานะ: **Planning (v0.2 — ปรับแผนสมบูรณ์หลังผ่านการวิเคราะห์ข้อโต้แย้งทางเทคนิค 7 ประการ)**
+---
 
-## เอกสาร
+## สถาปัตยกรรมหลัก (3-Tier Pipeline + Tier 1.5 Guardrail)
 
-| ไฟล์ | เนื้อหา |
-|---|---|
-| [docs/PRD.md](docs/PRD.md) | วิสัยทัศน์ ผู้ใช้ use case, Two-Tier Latency และ requirement ฉบับสมจริง (v0.2) |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | สถาปัตยกรรม Thread-isolated Audio, Fast-path router, Hermes integration, Hybrid modal (v0.2) |
-| [docs/ROADMAP.md](docs/ROADMAP.md) | แผนงาน M0–M4 สโคปสมจริงสำหรับ Solo Developer พร้อมเกณฑ์ Acceptance ชัดเจน (v0.2) |
-| [docs/adr/](docs/adr/) | บันทึกการตัดสินใจสำคัญ (ADR-0001 ถึง ADR-0006) พร้อมมติการปรับปรุง (Resolution) |
-| [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md) | ข้อจำกัดฮาร์ดแวร์จริง (RAM Available ~700MB, Built-in Mic/Speaker AEC, Cinnamon Shortcut) |
+1. **Zero-Weight Audio & VAD (`src/javis/audio/`):**
+   - `AudioCaptureWorker` + `NumpyRMSVAD` (16kHz mono PCM, `block_size=512`, ตัดจบอัตโนมัติเมื่อเงียบครบ `650ms` โดยไม่กิน RAM เพิ่ม)
+   - `HalfDuplexManager` (`350ms` cadence gap ป้องกัน Echo loop) + In-memory WAV (`io.BytesIO`, Zero Disk I/O)
+   - `GroqWhisperSTT` (`whisper-large-v3-turbo`)
+2. **Tier 1 — Deterministic Fast-Path (`src/javis/core/router.py`):**
+   - ตอบสนอง `< 0.8s` สำหรับคำสั่งเดี่ยว: เวลา, วันที่ พ.ศ., แบตเตอรี่, RAM/CPU, ปรับเสียง (`wpctl` / `pactl`), เปิดแอป, ค้นเว็บ, และ Life & Study Manager (`briefing` / `timetable`)
+3. **Tier 1.5 — Opt-in Guardrail & Intent Router (`src/javis/guardrail/tier15.py`):**
+   - Heuristic-only 0ms ป้องกันคำสั่งอันตราย + Opt-in LLM Verification (เมื่อตั้งค่า `JEV_API_KEY`)
+4. **Tier 2 — Hermes Gateway & Gemini Tool Loop (`src/javis/brain/hermes.py`, `src/javis/providers/free_stack.py`):**
+   - `HermesGatewayClient` (localhost port 8000, Soft Timeout `3.5s`, Circuit Breaker `15s`)
+   - Fallback ไปยัง `gemini-2.5-flash` พร้อม JSON Tool-Calling Loop
+5. **2-Tier Policy & SQLite Memory (`src/javis/core/policy.py`, `src/javis/core/memory.py`):**
+   - คำสั่ง `SAFE` รันทันทีพร้อม HUD `notify-send` / คำสั่ง `SENSITIVE` ยืนยันผ่าน `zenity --question` (Desktop) หรือ `POST /v1/confirm` (iPhone 11)
+   - บันทึก Rolling Memory (10 turns) และ `tool_audit_log` ลง `~/.local/share/javis/javis.db`
+6. **Streaming Sentence-Chunked TTS (`src/javis/tts/edge.py`):**
+   - `ThaiSentenceChunker` + Async Prefetch Queue (`th-TH-NiwatNeural`) + 32-item LRU Micro-Phrase RAM Cache + รองรับ Barge-in
 
-## หลักคิด 5 ข้อ (v0.2)
+---
 
-1. **Voice Frontend & Desktop Hands** — Javis โฟกัสที่ Audio Pipeline, Fast-Path คำสั่ง Desktop และส่งต่องานคิดซับซ้อนให้ Hermes Gateway
-2. **Two-Tier Latency** — คำสั่งสั้นผ่าน Local Fast Path ได้ P50 ≤ 0.8–1.0s; งานคิดทั่วไปผ่าน Cloud P50 ≤ 2.8s
-3. **Hardware-Aware Audio Policy** — ใช้ Intelligent Half-Duplex ป้องกันเสียงสะท้อนเข้าไมค์ (Echo loop) บนลำโพงแล็ปท็อป เว้นแต่จะเสียบหูฟัง
-4. **Hybrid Desktop Confirmation** — คำสั่งอันตรายต้องมี Desktop GUI Dialog (`zenity` / notification) ควบคู่เสียง ไม่ฝากชีวิตไว้กับ STT ฝั่งเดียว
-5. **Strict Memory & Thread Safety** — Audio C-callback แยก Thread ป้องกัน GIL lock, ห้ามใช้ faster-whisper small ป้องกัน OOM
+## M4.1: iPhone 11 Companion (`src/javis/ui/mobile_api.py`, `mobile/`, `docs/`)
 
-## ข้อจำกัดที่ออกแบบมาบนเครื่องนี้
+- **Network:** Tailscale Mesh VPN (port `8765`) + Bearer Token (`javis mobile-token`)
+- **Endpoints:** `GET /v1/health`, `POST /v1/ask` (คืน `audio_b64` จาก `EdgeTTSClient`), `POST /v1/confirm` (Two-Step Mobile Confirmation)
+- **iPhone 11 Setup:** ดูคู่มือ `docs/IPHONE11_SHORTCUTS_GUIDE.md` (Siri, Lock Screen Widget, Cloud Fallback `Speak Text` เมื่อคอมปิด) และวางโค้ด `mobile/javis_widget.js` ในแอป Scriptable
 
-- **RAM Available ~0.7 GB** → ปิดกั้นโมเดลใหญ่ถาวร, ควบคุม daemon RSS ≤ 180 MB, ออฟไลน์จำกัดที่ tiny เท่านั้น
-- **Built-in Mic & Speaker** → ใช้ Half-Duplex (ปิดไมค์ขณะเล่นเสียง) เพื่อกันเสียงวนลูป, รองรับ PTT interrupt
-- **Linux Mint / Cinnamon** → ใช้ Cinnamon Native Shortcuts (`cinnamon-settings shortcuts`) ควบคุม PTT เสถียร 100%
-- **Hermes Gateway (port 8000)** → มี Agentic & Memory อยู่แล้ว จึงเชื่อมต่อผ่าน API ไม่เขียนระบบสมองซ้ำซ้อน
+---
 
-## ถัดไป
+## คำสั่ง CLI หลัก (`src/javis/cli.py`)
 
-1. เริ่ม M0 ตาม ROADMAP: scaffold, thread-isolated audio loop, doctor, fakes
-2. ติดตั้ง dependency ตาม ENVIRONMENT.md และแมป Cinnamon Shortcut เข้ากับ `javis ptt`
+```bash
+javis doctor         # ตรวจความพร้อม RAM, Audio, API Keys, Hermes และเครื่องมือ Linux
+javis run            # รัน Voice Daemon + Mobile Companion Bridge (:8765)
+javis ptt            # สลับสถานะ Push-To-Talk (ผูกกับ <Shift><Super> บน Cinnamon)
+javis ask "ข้อความ"   # สั่งงาน/ถามผ่าน Terminal (เพิ่ม --speak เพื่ออ่านออกเสียง)
+javis tools --audit  # แสดงรายการเครื่องมือ, ระดับสิทธิ์ และ Audit Log ล่าสุด
+javis calibrate      # วัดระดับเสียงรบกวนเพื่อแนะนำ JAVIS_VAD_RMS_THRESHOLD
+javis mobile-token   # แสดง/สร้าง Bearer Token สำหรับ iPhone 11
+```
+
+---
+
+## เอกสารอ้างอิง (`docs/`)
+
+| เอกสาร | รายละเอียด |
+| :--- | :--- |
+| `docs/PRD.md` | Product Requirements & Use Cases (v0.2) |
+| `docs/ARCHITECTURE.md` | สถาปัตยกรรมระบบ Thread-isolated Audio, Router, Hermes & Hybrid Modal |
+| `docs/ROADMAP.md` | แผนการพัฒนา M0–M4 |
+| `docs/ENVIRONMENT.md` | สภาพแวดล้อม Linux Mint 22.3 (RAM ~700MB, Built-in Mic/Speaker, Cinnamon) |
+| `docs/IPHONE11_SHORTCUTS_GUIDE.md` | คู่มือตั้งค่า Apple Shortcuts, Siri, Tailscale และ Scriptable บน iPhone 11 |
