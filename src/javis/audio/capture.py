@@ -31,6 +31,19 @@ class AudioCaptureWorker:
         self._stream = None
         self._callback: Optional[Callable[[bytes], None]] = None
 
+    def _resolve_device_and_samplerate(self, sd):
+        """Detect best input device. Prioritize ALSA Loopback hw:1,1 (WO Mic / iPhone) if active."""
+        devices = sd.query_devices()
+        for idx, dev in enumerate(devices):
+            name = dev.get("name", "")
+            if dev.get("max_input_channels", 0) > 0:
+                if "Loopback" in name and "hw:1,1" in name:
+                    return idx, 48000, 3  # downsample factor = 3 (48000 -> 16000)
+        
+        # Fallback to system default input device
+        def_dev = sd.default.device[0] if sd.default.device[0] is not None else None
+        return def_dev, self.sample_rate, 1
+
     def start(self, callback: Optional[Callable[[bytes], None]] = None) -> None:
         """Start audio capture stream."""
         import sounddevice as sd
@@ -40,6 +53,9 @@ class AudioCaptureWorker:
 
         self._callback = callback
         self._is_running = True
+
+        dev_index, dev_sr, downsample_factor = self._resolve_device_and_samplerate(sd)
+        actual_block_size = self.block_size * downsample_factor
 
         def _sd_callback(indata, frames, time_info, status):
             if not self._is_running:
@@ -52,7 +68,9 @@ class AudioCaptureWorker:
             if not self.half_duplex.should_record():
                 return
 
-            pcm_bytes = (indata * 32767).astype(np.int16).tobytes()
+            # Downsample to target sample rate if needed
+            processed_data = indata[::downsample_factor] if downsample_factor > 1 else indata
+            pcm_bytes = (processed_data * 32767).astype(np.int16).tobytes()
             try:
                 self.audio_queue.put_nowait(pcm_bytes)
                 if self._callback:
@@ -61,10 +79,11 @@ class AudioCaptureWorker:
                 pass  # Ring buffer drops oldest frame under heavy pressure to prevent latency buildup
 
         self._stream = sd.InputStream(
-            samplerate=self.sample_rate,
+            device=dev_index,
+            samplerate=dev_sr,
             channels=self.channels,
             dtype="float32",
-            blocksize=self.block_size,
+            blocksize=actual_block_size,
             callback=_sd_callback,
         )
         self._stream.start()
