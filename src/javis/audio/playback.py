@@ -32,32 +32,30 @@ class AudioPlaybackEngine:
             self.half_duplex.playback_stopped()
 
     def play_mp3(self, mp3_data: bytes, sample_rate: int = 24000) -> None:
-        """Convert MP3 and play via PipeWire native pw-play (or mpv / sounddevice fallback)."""
+        """Play MP3 via mpv (native codec & rate detection) or fallback to sounddevice."""
+        import os
         import shutil
         import subprocess
+        import tempfile
 
         self.half_duplex.playback_started()
+        tmp_path = None
         try:
-            # 1. Prefer native pw-play on PipeWire systems for zero buffer underrun
-            if shutil.which("pw-play") and shutil.which("ffmpeg"):
+            # 1. Prefer mpv: handles exact MP3 sample rates (24kHz), PipeWire/Bluetooth buffer sync, perfectly
+            if shutil.which("mpv"):
                 try:
-                    p_ffmpeg = subprocess.Popen(
-                        ["ffmpeg", "-loglevel", "quiet", "-i", "pipe:0", "-f", "wav", "pipe:1"],
-                        stdin=subprocess.PIPE,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.DEVNULL,
-                    )
-                    p_play = subprocess.Popen(
-                        ["pw-play", "-"],
-                        stdin=p_ffmpeg.stdout,
+                    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
+                        f.write(mp3_data)
+                        tmp_path = f.name
+
+                    proc = subprocess.Popen(
+                        ["mpv", "--no-video", "--really-quiet", tmp_path],
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL,
                     )
                     with self._lock:
-                        self._current_proc = p_play
-                    p_ffmpeg.stdin.write(mp3_data)
-                    p_ffmpeg.stdin.close()
-                    p_play.wait()
+                        self._current_proc = proc
+                    proc.wait()
                     return
                 except Exception:
                     pass
@@ -72,6 +70,11 @@ class AudioPlaybackEngine:
                 sd.play(audio_array, samplerate=sample_rate)
                 sd.wait()
         finally:
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
             with self._lock:
                 self._current_proc = None
             self.half_duplex.playback_stopped()
