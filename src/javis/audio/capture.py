@@ -32,17 +32,44 @@ class AudioCaptureWorker:
         self._callback: Optional[Callable[[bytes], None]] = None
 
     def _resolve_device_and_samplerate(self, sd):
-        """Detect best input device. Prioritize ALSA Loopback hw:1,1 (WO Mic / iPhone) if active."""
+        """Detect best input device.
+        - If JAVIS_INPUT_DEVICE is specified (e.g. 'womic', 'pc', or device name), honor that.
+        - Otherwise, honor the system default input device (PC mic, USB mic, headset, etc.).
+        """
+        import os
+        custom_dev = os.getenv("JAVIS_INPUT_DEVICE", "").strip().lower()
         devices = sd.query_devices()
-        for idx, dev in enumerate(devices):
-            name = dev.get("name", "")
-            if dev.get("max_input_channels", 0) > 0:
-                if "Loopback" in name and "hw:1,1" in name:
-                    return idx, 48000, 3  # downsample factor = 3 (48000 -> 16000)
-        
-        # Fallback to system default input device
-        def_dev = sd.default.device[0] if sd.default.device[0] is not None else None
-        return def_dev, self.sample_rate, 1
+
+        # 1. Explicit womic / loopback request
+        if custom_dev in ("womic", "iphone", "loopback"):
+            for idx, dev in enumerate(devices):
+                name = dev.get("name", "")
+                if dev.get("max_input_channels", 0) > 0 and "Loopback" in name and "hw:1,1" in name:
+                    return idx, 48000, 3
+
+        # 2. If JAVIS_INPUT_DEVICE is set to a specific device index or substring
+        if custom_dev and custom_dev not in ("pc", "default", "auto"):
+            for idx, dev in enumerate(devices):
+                name = dev.get("name", "").lower()
+                if dev.get("max_input_channels", 0) > 0 and custom_dev in name:
+                    return idx, int(dev.get("default_samplerate", self.sample_rate)), 1
+
+        # 3. Check if system default explicitly points to Loopback
+        if not custom_dev:
+            try:
+                def_idx = sd.default.device[0]
+                if def_idx is not None and def_idx < len(devices):
+                    def_name = devices[def_idx].get("name", "")
+                    if "loopback" in def_name.lower():
+                        for idx, dev in enumerate(devices):
+                            name = dev.get("name", "")
+                            if dev.get("max_input_channels", 0) > 0 and "Loopback" in name and "hw:1,1" in name:
+                                return idx, 48000, 3
+            except Exception:
+                pass
+
+        # 4. Standard: PipeWire / ALSA default input device at target 16kHz
+        return None, self.sample_rate, 1
 
     def start(self, callback: Optional[Callable[[bytes], None]] = None) -> None:
         """Start audio capture stream."""
