@@ -113,6 +113,20 @@
 > 2. จำกัด Offline STT ไว้ที่ `faster-whisper tiny` (int8 quantized ~150MB) หรือ Vosk Thai เล็กเท่านั้น
 > 3. ปรับสเปกในเช็คลิสต์ M4 ให้เป็น `faster-whisper tiny`
 
+## M4.1 — iOS Companion & Mobile Bridge (เสร็จสิ้น - Closes #3, #5)
+
+**เป้าหมาย:** สั่งการ Javis OS จาก iPhone 11 ได้ทั้งทางเสียง ข้อความ วิดเจ็ต และคำสั่งลัด ผ่านสถาปัตยกรรม Thin iOS Client
+
+- [x] Lightweight Asyncio Mobile Server (`/v1/health`, `/v1/ask`, `/v1/confirm`) บนพอร์ต 8765
+- [x] ระบบยืนยันตัวตนความปลอดภัยด้วย Bearer Token (`javis mobile-token`)
+- [x] รองรับเครือข่าย Tailscale Mesh VPN (`100.x.y.z:8765`) สำหรับใช้งานนอกบ้าน
+- [x] Safari Web UI สำหรับ iPhone 11 (ธีม iOS Dark Glassmorphism, Web Speech API, Quick action buttons)
+- [x] รองรับ `tts: true` ส่งคืนเสียงสังเคราะห์ MP3 (Base64) จาก `EdgeTTSClient`
+- [x] Two-step confirmation สำหรับคำสั่ง sensitive (`/v1/confirm` ด้วย confirm_id)
+- [x] คู่มือการติดตั้ง Apple Shortcuts สำหรับ iPhone 11 (`docs/IPHONE11_SHORTCUTS_GUIDE.md`)
+- [x] สคริปต์วิดเจ็ต Scriptable Standalone (`mobile/javis_widget.js`)
+- [x] ผ่านการทดสอบ Unit Tests 100% (`test_mobile_companion_api_health_and_ask`, `test_mobile_two_step_confirm`)
+
 ## Backlog (ยังไม่จัดลำดับ)
 
 - ปฏิทิน/อีเมล, task จาก Linear/Notion

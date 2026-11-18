@@ -1,3 +1,4 @@
+import json
 import pytest
 from unittest.mock import AsyncMock
 from javis.core.memory import MemoryStore
@@ -35,7 +36,7 @@ async def test_policy_engine_safe_vs_sensitive_zenity_gate(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_mobile_companion_api(tmp_path):
+async def test_mobile_companion_api_health_and_ask(tmp_path):
     orch = VoicePipelineOrchestrator()
     srv = MobileCompanionServer(orchestrator=orch, token="secret123")
     code_h, health = await srv.process_request("GET", "/v1/health", {}, b"")
@@ -43,3 +44,42 @@ async def test_mobile_companion_api(tmp_path):
     assert health["status"] == "ok"
     code_unauth, _ = await srv.process_request("POST", "/v1/ask", {}, b'{"query": "hello"}')
     assert code_unauth == 401
+
+    headers = {"authorization": "Bearer secret123"}
+    ask_payload = json.dumps({"query": "ตอนนี้กี่โมง"}).encode("utf-8")
+    code_ask, ask_res = await srv.process_request("POST", "/v1/ask", headers, ask_payload)
+    assert code_ask == 200
+    assert "reply" in ask_res
+    assert ask_res["requires_confirmation"] is False
+
+
+@pytest.mark.asyncio
+async def test_mobile_two_step_confirm(tmp_path):
+    orch = VoicePipelineOrchestrator()
+    srv = MobileCompanionServer(orchestrator=orch, token="secret123")
+    headers = {"authorization": "Bearer secret123"}
+
+    # 1. Sensitive action triggers confirmation request
+    sens_payload = json.dumps({"query": "ลบไฟล์ขยะในระบบ"}).encode("utf-8")
+    code, res = await srv.process_request("POST", "/v1/ask", headers, sens_payload)
+    assert code == 200
+    assert res["requires_confirmation"] is True
+    confirm_id = res["confirm_id"]
+    assert confirm_id
+
+    # 2. Rejection via /v1/confirm
+    cancel_payload = json.dumps({"confirm_id": confirm_id, "approved": False}).encode("utf-8")
+    code_c, res_c = await srv.process_request("POST", "/v1/confirm", headers, cancel_payload)
+    assert code_c == 200
+    assert res_c["status"] == "cancelled"
+    assert res_c["approved"] is False
+
+    # 3. New sensitive action approved
+    sens2_payload = json.dumps({"query": "ปิดเครื่องระบบ"}).encode("utf-8")
+    code2, res2 = await srv.process_request("POST", "/v1/ask", headers, sens2_payload)
+    confirm_id2 = res2["confirm_id"]
+    approve_payload = json.dumps({"confirm_id": confirm_id2, "approved": True}).encode("utf-8")
+    code_a, res_a = await srv.process_request("POST", "/v1/confirm", headers, approve_payload)
+    assert code_a == 200
+    assert res_a["status"] == "confirmed"
+    assert res_a["approved"] is True

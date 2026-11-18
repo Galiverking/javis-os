@@ -1,9 +1,11 @@
 """Lightweight Asyncio HTTP Mobile Companion Bridge for iPhone (Apple Shortcuts + Scriptable + Safari Web UI)."""
 import asyncio
+import base64
 import json
 import logging
 import os
 import secrets
+import time
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
@@ -315,6 +317,7 @@ class MobileCompanionServer:
         self.port = port
         self.token = token if token is not None else get_or_create_mobile_token()
         self._server: Optional[asyncio.AbstractServer] = None
+        self._pending_confirms: Dict[str, dict] = {}
 
     async def process_request(self, method: str, path: str, headers: Dict[str, str], body: bytes) -> Tuple[int, Any]:
         """Core routing logic matching HTTP requests."""
@@ -348,8 +351,25 @@ class MobileCompanionServer:
             except Exception:
                 payload = {}
             query = str(payload.get("query") or "").strip()
+            want_tts = bool(payload.get("tts", False))
             if not query:
                 return 400, {"error": "Missing query"}
+
+            # Check if query requests a sensitive operation requiring mobile two-step confirmation
+            sensitive_keywords = ["ลบไฟล์", "ลบโฟลเดอร์", "shutdown", "reboot", "ปิดเครื่อง", "รีสตาร์ท", "rm -", "delete"]
+            is_sensitive = any(kw in query.lower() for kw in sensitive_keywords)
+            if is_sensitive:
+                confirm_id = secrets.token_hex(8)
+                self._pending_confirms[confirm_id] = {
+                    "query": query,
+                    "ts": time.time(),
+                }
+                return 200, {
+                    "reply": f"คำสั่งนี้อาจส่งผลต่อระบบ: \"{query}\" คุณต้องการยืนยันการดำเนินการหรือไม่?",
+                    "requires_confirmation": True,
+                    "confirm_id": confirm_id,
+                    "state": str(getattr(self.orchestrator, "state", "IDLE")),
+                }
 
             # Process query through Orchestrator pipeline
             if hasattr(self.orchestrator, "process_text_query"):
@@ -359,7 +379,58 @@ class MobileCompanionServer:
             else:
                 reply = "Javis พร้อมทำงานครับ"
 
-            return 200, {"reply": reply, "state": str(getattr(self.orchestrator, "state", "IDLE"))}
+            audio_b64 = None
+            if want_tts and hasattr(self.orchestrator, "tts") and hasattr(self.orchestrator.tts, "synthesize_speech"):
+                try:
+                    mp3_bytes = await self.orchestrator.tts.synthesize_speech(reply)
+                    if mp3_bytes:
+                        audio_b64 = base64.b64encode(mp3_bytes).decode("ascii")
+                except Exception as e:
+                    logger.debug("TTS synthesis failed in mobile API: %s", e)
+
+            resp_obj = {
+                "reply": reply,
+                "requires_confirmation": False,
+                "state": str(getattr(self.orchestrator, "state", "IDLE")),
+            }
+            if audio_b64:
+                resp_obj["audio_b64"] = audio_b64
+
+            return 200, resp_obj
+
+        # 6. Two-Step Confirmation Endpoint
+        if path == "/v1/confirm" and method == "POST":
+            try:
+                payload = json.loads(body.decode("utf-8") or "{}")
+            except Exception:
+                payload = {}
+            confirm_id = str(payload.get("confirm_id") or "").strip()
+            approved = bool(payload.get("approved", False))
+
+            if not confirm_id or confirm_id not in self._pending_confirms:
+                return 404, {"error": "Invalid or expired confirm_id", "approved": False}
+
+            pending = self._pending_confirms.pop(confirm_id)
+            if not approved:
+                return 200, {
+                    "status": "cancelled",
+                    "reply": "ยกเลิกคำสั่งเรียบร้อยครับ",
+                    "approved": False,
+                }
+
+            query = pending["query"]
+            if hasattr(self.orchestrator, "process_text_query"):
+                reply = await self.orchestrator.process_text_query(query)
+            elif hasattr(self.orchestrator, "llm") and hasattr(self.orchestrator.llm, "generate_response"):
+                reply = await self.orchestrator.llm.generate_response(query)
+            else:
+                reply = "ดำเนินการเรียบร้อยครับ"
+
+            return 200, {
+                "status": "confirmed",
+                "reply": f"ยืนยันและดำเนินการเรียบร้อยครับ: {reply}",
+                "approved": True,
+            }
 
         return 404, {"error": "Not found"}
 
