@@ -33,7 +33,7 @@ class FreeTierLLMClient:
         payload = {
             "contents": contents,
             "generationConfig": {
-                "maxOutputTokens": 200,
+                "maxOutputTokens": 1024,
                 "temperature": 0.6,
             }
         }

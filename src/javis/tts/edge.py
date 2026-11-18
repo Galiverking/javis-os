@@ -80,15 +80,26 @@ class EdgeTTSClient:
         self.voice = voice
 
     async def synthesize_stream(self, text: str) -> bytes:
-        """Synthesize text to MP3 audio bytes using edge-tts."""
+        """Synthesize text to MP3 audio bytes using edge-tts with automatic fallback."""
         import edge_tts
 
-        communicate = edge_tts.Communicate(text, self.voice)
-        audio_stream = io.BytesIO()
-        async for chunk in communicate.stream():
-            if chunk["type"] == "audio":
-                audio_stream.write(chunk["data"])
-        return audio_stream.getvalue()
+        voices_to_try = [self.voice]
+        if self.voice != DEFAULT_VOICE:
+            voices_to_try.append(DEFAULT_VOICE)
+
+        for v in voices_to_try:
+            try:
+                communicate = edge_tts.Communicate(text, v)
+                audio_stream = io.BytesIO()
+                async for chunk in communicate.stream():
+                    if chunk["type"] == "audio":
+                        audio_stream.write(chunk["data"])
+                data = audio_stream.getvalue()
+                if data:
+                    return data
+            except Exception as e:
+                pass
+        return b""
 
     async def synthesize_speech(self, text: str) -> bytes:
         """Alias for synthesize_stream."""
